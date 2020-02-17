@@ -1,0 +1,358 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: cicdn
+  group: cicdn
+metadata:
+  annotations:
+    iconClass: icon-jenkins
+    tags: instant-app,jenkins,cicd
+  name: cicd
+message: "Use the following credentials for login:\nJenkins: use your OpenShift credentials"
+parameters:
+- description: The name assigned to all of the frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: dotnet-runtime-example
+- description: Maximum amount of memory the container can use.
+  displayName: Memory Limit
+  name: MEMORY_LIMIT
+  required: true
+  value: 128Mi
+- description: The image stream tag which is used to run the application.
+  displayName: .NET Runtime Imagestream Tag
+  name: DOTNET_RUNTIME_IMAGE_STREAM_TAG
+  required: true
+  value: dotnet-runtime:3.1
+- description: The image stream tag which is used to build the application.
+  displayName: .NET builder
+  name: DOTNET_BUILD_IMAGE_STREAM_TAG
+  required: true
+  value: dotnet:3.1
+- description: The OpenShift Namespace where the ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  required: true
+  value: openshift
+- description: The exposed hostname that will route to the .NET Core service, if left
+  blank a value will be defaulted.
+  displayName: Application Hostname
+  name: APPLICATION_DOMAIN
+- description: The URL of the repository with your application source code.
+  displayName: Git Repository URL
+  name: SOURCE_REPOSITORY_URL
+  required: true
+  value: https://github.com/oip-prd-ocp-c1/s2i-dotnetcore-ex.git
+- description: Set this to a branch name, tag or other ref of your repository if you
+    are not using the default branch.
+  displayName: Git Reference
+  name: SOURCE_REPOSITORY_REF
+  value: dotnetcore-3.1
+- description: Set this to use a subdirectory of the source code repository
+  displayName: Context Directory
+  name: CONTEXT_DIR
+- description: A secret string used to configure the GitHub webhook.
+  displayName: GitHub Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GITHUB_WEBHOOK_SECRET
+- description: A secret string used to configure the Generic webhook.
+  displayName: Generic Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GENERIC_WEBHOOK_SECRET
+- description: Set this to the folder containing your startup project.
+  displayName: Startup Project
+  name: DOTNET_STARTUP_PROJECT
+  value: app
+- description: Set this to configure the default SDK version. This can be set to a
+    specific version, '' (lowest version) or 'latest' (highest version).
+  displayName: SDK Version
+  name: DOTNET_SDK_VERSION
+- description: Set this when the assembly name is overridden in the project file.
+  displayName: Startup Assembly
+  name: DOTNET_ASSEMBLY_NAME
+- description: Set this to a space separated list of .NET tools needed to publish.
+  displayName: .NET Tools
+  name: DOTNET_TOOLS
+- description: Set this to a space separated list of npm tools needed to publish.
+  displayName: Npm Tools
+  name: DOTNET_NPM_TOOLS
+- description: Set this to a space separated list of test projects to run before publishing.
+  displayName: Test projects
+  name: DOTNET_TEST_PROJECTS
+- description: Set this to configuration (Release/Debug).
+  displayName: Configuration
+  name: DOTNET_CONFIGURATION
+  value: Release
+- description: Set this to override the NuGet.config sources.
+  displayName: NuGet package sources
+  name: DOTNET_RESTORE_SOURCES
+
+- displayName: DEV project name
+  value: devn
+  name: DEV_PROJECT
+  required: true
+- displayName: STAGE project name
+  value: uatn
+  name: STAGE_PROJECT
+  required: true
+- displayName: STAGE TAG with version.release.modification format
+  from: 'v[0-9]{2}.[0-9]{2}.[0-9]{2}'
+  generate: expression
+  name: STAGE_TAG
+  required: true
+- description: Webhook secret
+  from: '[a-zA-Z0-9]{8}'
+  generate: expression
+  name: WEBHOOK_SECRET
+  required: true
+
+
+
+
+- displayName: Template name
+  description: Template name that deploy the entire app
+  name: TEMPLATE_NAME
+  required: true
+  value: https://raw.githubusercontent.com/ALASPEDRO/os-sample-python/master/.openshift/template.yaml
+- displayName: Artifact folder
+  description: Artifact folder to storage the file.zip code
+  name: ARTIFACT_FOLDER
+  required: true
+  value: target
+- description: >-
+    Unique app deployment identifyer. You can specify one or let the system
+    generate one automatically for you.
+  displayName: (Optional) Deployment ID
+  from: '[a-z]{5}'
+  generate: expression
+  name: DEPL_ID
+  required: true
+objects:
+#kind: RoleBinding admin
+- apiVersion: v1
+  groupNames: null
+  kind: RoleBinding
+  metadata:
+    name: default_admin
+  roleRef:
+    name: admin
+  subjects:
+  - kind: ServiceAccount
+    name: default
+# Pipeline
+#kind: BuildConfig dotnet-pipeline
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      pipeline.alpha.openshift.io/uses: '[{"name": "jenkins", "namespace": "", "kind": "DeploymentConfig"}]'
+    labels:
+      app: cicdn-pipeline
+      name: cicdn-pipeline
+    name: dotnet-pipeline
+  spec:
+    triggers:
+      - type: GitHub
+        github:
+          secret: ${WEBHOOK_SECRET}
+      - type: Generic
+        generic:
+          secret: ${WEBHOOK_SECRET}
+    runPolicy: Serial
+    source:
+      type: None
+    strategy:
+      jenkinsPipelineStrategy:
+        env:
+        - name: DEV_PROJECT
+          value: ${DEV_PROJECT}
+        - name: STAGE_PROJECT
+          value: ${STAGE_PROJECT}
+        - name: STAGE_TAG
+          value: ${STAGE_TAG}
+        - name: NAME
+          value: ${NAME}
+        - name: SOURCE_REPOSITORY_URL
+          value: ${SOURCE_REPOSITORY_URL}
+        - name: SOURCE_REPOSITORY_REF
+          value: ${SOURCE_REPOSITORY_REF}
+        - name: TEMPLATE_NAME
+          value: ${TEMPLATE_NAME}
+        - name: ARTIFACT_FOLDER
+          value: ${ARTIFACT_FOLDER}
+        - name: DEPL_ID
+          value: ${DEPL_ID}          
+        jenkinsfile: |-
+          pipeline {
+            agent {
+              node {label 'python'}
+            }
+            stages {
+              stage('Get Latest Code') {
+                steps {
+                  git branch: "${SOURCE_REPOSITORY_REF}", url: "${SOURCE_REPOSITORY_URL}"
+                }
+              }            
+              stage ("Install Dependencies") {
+                steps {
+                  sh """
+                  python -m venv venv
+                  source venv/bin/activate
+                  pip install -r requirements.pip
+                  deactivate
+                  """
+                }
+              }
+              stage('Run Tests') {
+                steps {
+                    sh '''
+                    source venv/bin/activate
+                    nosetests --with-xunit
+                    deactivate
+                    '''
+                    junit "nosetests.xml"
+                }
+              }
+              stage('Store Artifact'){
+                steps{
+                  script{
+                    def safeBuildName  = "${NAME}_${BUILD_NUMBER}",
+                        artifactFolder = "${ARTIFACT_FOLDER}",
+                        fullFileName   = "${safeBuildName}.tar.gz",
+                        applicationZip = "${artifactFolder}/${fullFileName}"
+                        applicationDir = ["wsgi.py",
+                                            "requirements.txt",
+                                            "config.py",
+                                            ".s2i",
+                                            ].join(" ");
+                    def needTargetPath = !fileExists("${artifactFolder}")
+                    
+                    if (needTargetPath) {
+                      sh "mkdir ${artifactFolder}"
+                    }
+                    sh "tar -czvf ${applicationZip} ${applicationDir}"
+                    archiveArtifacts artifacts: "${applicationZip}", excludes: null, onlyIfSuccessful: true
+                  }
+                }
+              }              
+              stage('Build Image') {
+                steps {
+                  script {
+                    openshift.withCluster() {
+                      openshift.withProject(env.DEV_PROJECT) {
+                        openshift.selector("bc", "${NAME}-backend-${DEPL_ID}").startBuild("--from-archive=${ARTIFACT_FOLDER}/${NAME}_${BUILD_NUMBER}.tar.gz", "--follow", "--wait=true")
+                      }
+                    }
+                  }
+                }
+              }
+              stage('Promote to STAGE?') {
+                steps {
+                  timeout(time:30, unit:'MINUTES') {
+                    input message: "Promote to STAGE?", ok: "Promote"
+                  }
+                  script {
+                    openshift.withCluster() {
+                      openshift.tag("${DEV_PROJECT}/${NAME}-backend-${DEPL_ID}:latest", "${STAGE_PROJECT}/${NAME}-backend-${DEPL_ID}:${STAGE_TAG}.${BUILD_NUMBER}")
+                      openshift.tag("${STAGE_PROJECT}/${NAME}-backend-${DEPL_ID}:${STAGE_TAG}.${BUILD_NUMBER}", "${STAGE_PROJECT}/${NAME}-backend-${DEPL_ID}:latest")
+                    }
+                  }
+                }
+              }
+            }          
+          }
+      type: JenkinsPipeline
+#kind: ConfigMap jenkins-slaves (maven, scopeo and python)
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    labels:
+      app: cicdn-pipeline
+      role: jenkins-slave
+    name: jenkins-slaves
+  data:
+    python-template: |-
+      <org.csanchez.jenkins.plugins.kubernetes.PodTemplate>
+        <inheritFrom></inheritFrom>
+        <name>python</name>
+        <privileged>false</privileged>
+        <alwaysPullImage>false</alwaysPullImage>
+        <instanceCap>2147483647</instanceCap>
+        <idleMinutes>0</idleMinutes>
+        <label>python</label>
+        <serviceAccount>jenkins</serviceAccount>
+        <nodeSelector></nodeSelector>
+        <customWorkspaceVolumeEnabled>false</customWorkspaceVolumeEnabled>
+        <workspaceVolume class="org.csanchez.jenkins.plugins.kubernetes.volumes.workspace.EmptyDirWorkspaceVolume">
+          <memory>false</memory>
+        </workspaceVolume>
+        <volumes />
+        <containers>
+          <org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate>
+            <name>jnlp</name>
+            <image>idealo/jenkins-slave-python-centos7:latest</image>
+            <privileged>false</privileged>
+            <alwaysPullImage>false</alwaysPullImage>
+            <workingDir>/tmp</workingDir>
+            <command></command>
+            <args>${computer.jnlpmac} ${computer.name}</args>
+            <ttyEnabled>false</ttyEnabled>
+            <envVars/>
+          </org.csanchez.jenkins.plugins.kubernetes.ContainerTemplate>
+        </containers>
+        <envVars/>
+        <annotations/>
+        <imagePullSecrets/>
+      </org.csanchez.jenkins.plugins.kubernetes.PodTemplate>
+# Setup dotnet app CI/CD
+- apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: cicd-dotnet-installer
+  spec:
+    activeDeadlineSeconds: 400
+    completions: 1
+    parallelism: 1
+    template:
+      spec:
+        containers:
+        - env:
+          - name: CICD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          command:
+          - /bin/bash
+          - -x
+          - -c
+          - |           
+            # adjust jenkins 
+            oc set resources dc/jenkins --limits=cpu=3,memory=4Gi --requests=cpu=1Gi,memory=1Gi 
+            oc label dc jenkins app=jenkins --overwrite 
+
+            # setup dotnet-dev env
+            
+            oc -n ${DEV_PROJECT} new-app \
+                -f ${TEMPLATE_NAME} \
+                -p APP_NAME=${NAME} \
+                -p DEPL_ID=${DEPL_ID} \
+                -p SOURCE_REPOSITORY_URL=${SOURCE_REPOSITORY_URL} \
+                -p SOURCE_REPOSITORY_REF=${SOURCE_REPOSITORY_REF}
+
+            # setup dotnet-stage env
+            oc -n ${STAGE_PROJECT} new-app \
+                -f ${TEMPLATE_NAME} \
+                -p APP_NAME=${NAME} \
+                -p DEPL_ID=${DEPL_ID} \
+                -p SOURCE_REPOSITORY_URL=${SOURCE_REPOSITORY_URL} \
+                -p SOURCE_REPOSITORY_REF=${SOURCE_REPOSITORY_REF}     
+            
+          image: openshift/origin:v3.11
+          name: cicd-dotnet-installer-job
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        restartPolicy: Never
