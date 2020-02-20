@@ -114,7 +114,7 @@ parameters:
   description: Template name that deploy the entire app
   name: TEMPLATE_NAME
   required: true
-  value: https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-3.1/openshift/template_dotnet_ext_31.yaml
+  value: https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-3.1/.openshift/template_dotnet_ext_31.yaml
 - displayName: Artifact folder
   description: Artifact folder to storage the file.zip code
   name: ARTIFACT_FOLDER
