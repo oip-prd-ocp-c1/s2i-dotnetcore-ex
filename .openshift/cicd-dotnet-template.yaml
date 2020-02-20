@@ -25,12 +25,12 @@ parameters:
   displayName: .NET Runtime Imagestream Tag
   name: DOTNET_RUNTIME_IMAGE_STREAM_TAG
   required: true
-  value: dotnet-runtime:2.1
+  value: dotnet-runtime:2.2
 - description: The image stream tag which is used to build the application.
   displayName: .NET builder
   name: DOTNET_BUILD_IMAGE_STREAM_TAG
   required: true
-  value: dotnet:2.1
+  value: dotnet:2.2
 - description: The OpenShift Namespace where the ImageStream resides.
   displayName: Namespace
   name: NAMESPACE
@@ -49,7 +49,7 @@ parameters:
     are not using the default branch.
   displayName: Git Reference
   name: SOURCE_REPOSITORY_REF
-  value: dotnetcore-2.1
+  value: dotnetcore-2.2
 - description: Set this to use a subdirectory of the source code repository
   displayName: Context Directory
   name: CONTEXT_DIR
