@@ -5,6 +5,21 @@ labels:
   group: cicdn
 metadata:
   annotations:
+    description: |-
+      to deploy this template please create the projects namespaces (please use other than devm, uatm and cicdm namespaces):
+        oc new-project devn --display-name="devn"
+        oc new-project uatn --display-name="uatn" 
+        oc new-project cicdn --display-name="cicdn" 
+      Grant “edition right” of cicdm account to build and deploy images into dev and uat namespaces 
+        oc policy add-role-to-group edit system:serviceaccounts:cicdn -n devn
+        oc policy add-role-to-group edit system:serviceaccounts:cicdn -n uatn
+
+      If you see this template provabily you create this usign:
+        $ oc create -f https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-2.2/.openshift/cicd-dotnet-template.yaml -n cicdm
+        *note that you can refer to your own back repository*
+    openshift.io/display-name: cicd
+    openshift.io/long-description: This template provides a cicd basic pipeline to be deploy
+    tags: cicd,dotnetcore
     iconClass: icon-jenkins
     tags: instant-app,jenkins,cicd
   name: cicd
@@ -114,7 +129,7 @@ parameters:
   description: Template name that deploy the entire app
   name: TEMPLATE_NAME
   required: true
-  value: https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-2.1/.openshift/template_dotnet_ext_21.yaml
+  value: https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-2.2/.openshift/template_dotnet_ext_22.yaml
 - displayName: Artifact folder
   description: Artifact folder to storage the file.zip code
   name: ARTIFACT_FOLDER
