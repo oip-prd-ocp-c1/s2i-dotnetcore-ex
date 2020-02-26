@@ -17,16 +17,15 @@ metadata:
       If you see this template provabily you create this usign:
         $ oc create -f https://raw.githubusercontent.com/oip-prd-ocp-c1/s2i-dotnetcore-ex/dotnetcore-2.2/.openshift/cicd-dotnet-template.yaml -n cicdm
         *note that you can refer to your own back repository*
-    openshift.io/display-name: cicd
+    openshift.io/display-name: .NET CICD runtime core example
     openshift.io/long-description: This template provides a cicd basic pipeline to be deploy
-    tags: cicd,dotnetcore
     iconClass: icon-jenkins
-    tags: instant-app,jenkins,cicd
-  name: cicd
+    tags: cicd,dotnetcore,jenkins
+  name: cicdotnet
 message: "Use the following credentials for login:\nJenkins: use your OpenShift credentials"
 parameters:
 #Params of general the app 
-- description: The name assigned to all of the frontend objects defined in this template.
+- description: The name assigned to all of the frontend objects defined in this template. Name must consist of lower case alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character (e.g. 'my-name',  or 'abc-123', regex used for validation is '[a-z]([-a-z0-9]*[a-z0-9])?')
   displayName: Name
   name: NAME
   required: true
@@ -51,10 +50,6 @@ parameters:
   name: NAMESPACE
   required: true
   value: openshift
-- description: The exposed hostname that will route to the .NET Core service, if left
-    blank a value will be defaulted.
-  displayName: Application Hostname
-  name: APPLICATION_DOMAIN
 - description: The URL of the repository with your application source code.
   displayName: Git Repository URL
   name: SOURCE_REPOSITORY_URL
@@ -64,10 +59,7 @@ parameters:
     are not using the default branch.
   displayName: Git Reference
   name: SOURCE_REPOSITORY_REF
-  value: dotnetcore-2.1
-- description: Set this to use a subdirectory of the source code repository
-  displayName: Context Directory
-  name: CONTEXT_DIR
+  value: dotnetcore-2.2
 - description: A secret string used to configure the GitHub webhook.
   displayName: GitHub Webhook Secret
   from: '[a-zA-Z0-9]{40}'
@@ -326,6 +318,7 @@ objects:
             
             oc -n ${DEV_PROJECT} new-app \
                 -f ${TEMPLATE_NAME} \
+                -p NAME=${NAME} \
                 -p DOTNET_STARTUP_PROJECT=${DOTNET_STARTUP_PROJECT} \
                 -p DOTNET_SDK_VERSION=${DOTNET_SDK_VERSION} \
                 -p DOTNET_ASSEMBLY_NAME=${DOTNET_ASSEMBLY_NAME} \
@@ -338,6 +331,7 @@ objects:
             # setup dotnet-stage env
             oc -n ${STAGE_PROJECT} new-app \
                 -f ${TEMPLATE_NAME} \
+                -p NAME=${NAME} \
                 -p DOTNET_STARTUP_PROJECT=${DOTNET_STARTUP_PROJECT} \
                 -p DOTNET_SDK_VERSION=${DOTNET_SDK_VERSION} \
                 -p DOTNET_ASSEMBLY_NAME=${DOTNET_ASSEMBLY_NAME} \
