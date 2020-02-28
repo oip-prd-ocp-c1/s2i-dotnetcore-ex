@@ -1,0 +1,666 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: mongodb-persistent-dotnet-runtime-angular-sample
+message: |-
+  The following service(s) have been created in your project: ${DATABASE_SERVICE_NAME}.
+
+          Username: ${MONGODB_USER}
+          Password: ${MONGODB_PASSWORD}
+    Database Name: ${MONGODB_DATABASE}
+    Connection URL: mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@${DATABASE_SERVICE_NAME}/${MONGODB_DATABASE}
+
+  For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mongodb-container/blob/master/3.2/README.md.
+
+metadata:
+  annotations:
+    description: |-
+      An example .NET Core Runtime example application. An example Angular application. MongoDB database service, with persistent storage. 
+      
+      NOTE: Scaling to more than one replica is not supported. You must have persistent volumes available in your cluster to use this template.
+    iconClass: icon-dotnet
+    openshift.io/display-name: .NET Core Runtime Example
+    tags: quickstart,dotnet,.net,angular,mongodb
+    template.openshift.io/documentation-url: https://github.com/redhat-developer/s2i-dotnetcore
+    template.openshift.io/provider-display-name: Red Hat, Inc.
+    template.openshift.io/support-url: https://access.redhat.com
+  creationTimestamp: null
+  name: mongodb-persistent-dotnet-runtime-angular-sample
+objects:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    annotations:
+      template.openshift.io/expose-admin_password: '{.data[''database-admin-password'']}'
+      template.openshift.io/expose-database_name: '{.data[''database-name'']}'
+      template.openshift.io/expose-password: '{.data[''database-password'']}'
+      template.openshift.io/expose-username: '{.data[''database-user'']}'
+    name: ${DATABASE_SERVICE_NAME}
+  stringData:
+    database-admin-password: ${MONGODB_ADMIN_PASSWORD}
+    database-name: ${MONGODB_DATABASE}
+    database-password: ${MONGODB_PASSWORD}
+    database-user: ${MONGODB_USER}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      template.openshift.io/expose-uri: mongodb://{.spec.clusterIP}:{.spec.ports[?(.name=="mongo")].port}
+    name: ${DATABASE_SERVICE_NAME}
+  spec:
+    ports:
+    - name: mongo
+      nodePort: 0
+      port: 27017
+      protocol: TCP
+      targetPort: 27017
+    selector:
+      name: ${DATABASE_SERVICE_NAME}
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${DATABASE_SERVICE_NAME}
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${VOLUME_CAPACITY}
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${DATABASE_SERVICE_NAME}
+  spec:
+    replicas: 1
+    selector:
+      name: ${DATABASE_SERVICE_NAME}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: ${DATABASE_SERVICE_NAME}
+      spec:
+        containers:
+        - capabilities: {}
+          env:
+          - name: MONGODB_USER
+            valueFrom:
+              secretKeyRef:
+                key: database-user
+                name: ${DATABASE_SERVICE_NAME}
+          - name: MONGODB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-password
+                name: ${DATABASE_SERVICE_NAME}
+          - name: MONGODB_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-admin-password
+                name: ${DATABASE_SERVICE_NAME}
+          - name: MONGODB_DATABASE
+            valueFrom:
+              secretKeyRef:
+                key: database-name
+                name: ${DATABASE_SERVICE_NAME}
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            tcpSocket:
+              port: 27017
+            timeoutSeconds: 1
+          name: mongodb
+          ports:
+          - containerPort: 27017
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - mongo 127.0.0.1:27017/$MONGODB_DATABASE -u $MONGODB_USER -p $MONGODB_PASSWORD
+                --eval="quit()"
+            initialDelaySeconds: 3
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: ${MEMORY_LIMIT}
+          securityContext:
+            capabilities: {}
+            privileged: false
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/lib/mongodb/data
+            name: ${DATABASE_SERVICE_NAME}-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        volumes:
+        - name: ${DATABASE_SERVICE_NAME}-data
+          persistentVolumeClaim:
+            claimName: ${DATABASE_SERVICE_NAME}
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - mongodb
+        from:
+          kind: ImageStreamTag
+          name: mongodb:${MONGODB_VERSION}
+          namespace: ${NAMESPACE}
+        lastTriggeredImage: ""
+      type: ImageChange
+    - type: ConfigChange
+  status: {}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: ${NAME}
+  spec:
+    host: ${APPLICATION_DOMAIN}
+    to:
+      kind: Service
+      name: ${NAME}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      app: angular-web-app
+    name: angular-web-app
+  spec:
+    host: ${APPLICATION_DOMAIN_ANGULAR}
+    port:
+      targetPort: 8080
+    to:
+      kind: Service
+      name: angular-web-app
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes and load balances the application pods
+    name: ${NAME}
+  spec:
+    ports:
+    - name: web
+      port: 8080
+      targetPort: 8080
+    selector:
+      name: ${NAME}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: angular-web-app
+    name: angular-web-app
+  spec:
+    ports:
+    - name: http
+      port: 8080
+    selector:
+      app: angular-web-app
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: angular-web-app-builder
+  spec: {}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: angular-web-app-runtime
+  spec: {}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: web-app-builder-runtime
+  spec:
+    tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: nodeshift/centos7-s2i-web-app:latest
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    name: nginx-image-runtime
+  spec:
+    tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: 'centos/nginx-112-centos7:latest'
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in the application runtime image
+    name: ${NAME}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in the application builder image
+    name: ${NAME}-build
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: angular-web-app-builder
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: angular-web-app-builder:latest
+    postCommit: {}
+    resources: {}
+    source:
+      git:
+        uri: ${SOURCE_REPOSITORY_URL_ANGULAR}
+        ref: ${SOURCE_REPOSITORY_REF_ANGULAR}
+      contextDir: ${SOURCE_REPOSITORY_DIR_ANGULAR}
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+          - name: OUTPUT_DIR
+            value: ${OUTPUT_DIR_ANGULAR}
+        from:
+          kind: ImageStreamTag
+          name: web-app-builder-runtime:latest
+        incremental: true
+      type: Source
+    triggers:
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET_ANGULAR}
+      type: GitHub
+    - type: ConfigChange
+    - imageChange: {}
+      type: ImageChange
+  status:
+    lastVersion: 0
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: angular-web-app-runtime
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: angular-web-app-runtime:latest
+    postCommit: {}
+    resources: {}
+    source:
+      type: Image
+      images:
+        - from:
+            kind: ImageStreamTag
+            name: angular-web-app-builder:latest
+          paths:
+            - destinationDir: .
+              sourcePath: /opt/app-root/output/.
+    strategy:
+      sourceStrategy:
+        from:
+          kind: ImageStreamTag
+          name: nginx-image-runtime:latest
+        incremental: true
+      type: Source
+    triggers:
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET_ANGULAR}
+      type: GitHub
+    - type: ConfigChange
+    - type: ImageChange
+      imageChange: {}
+    - type: ImageChange
+      imageChange:
+        from:
+          kind: ImageStreamTag
+          name: angular-web-app-builder:latest
+  status:
+    lastVersion: 0
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Defines how to build the application
+    name: ${NAME}-build
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}-build:latest
+    source:
+      contextDir: ${CONTEXT_DIR}
+      git:
+        ref: ${SOURCE_REPOSITORY_REF}
+        uri: ${SOURCE_REPOSITORY_URL}
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+        - name: DOTNET_STARTUP_PROJECT
+          value: ${DOTNET_STARTUP_PROJECT}
+        - name: DOTNET_SDK_VERSION
+          value: ${DOTNET_SDK_VERSION}
+        - name: DOTNET_ASSEMBLY_NAME
+          value: ${DOTNET_ASSEMBLY_NAME}
+        - name: DOTNET_NPM_TOOLS
+          value: ${DOTNET_NPM_TOOLS}
+        - name: DOTNET_TEST_PROJECTS
+          value: ${DOTNET_TEST_PROJECTS}
+        - name: DOTNET_CONFIGURATION
+          value: ${DOTNET_CONFIGURATION}
+        - name: DOTNET_RESTORE_SOURCES
+          value: ${DOTNET_RESTORE_SOURCES}
+        - name: DOTNET_PACK
+          value: "true"
+        - name: DOTNET_TOOLS
+          value: ${DOTNET_TOOLS}
+        from:
+          kind: ImageStreamTag
+          name: ${DOTNET_BUILD_IMAGE_STREAM_TAG}
+          namespace: ${NAMESPACE}
+      type: Source
+    triggers:
+    - type: ImageChange
+    - type: ConfigChange
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
+      type: GitHub
+    - generic:
+        secret: ${GENERIC_WEBHOOK_SECRET}
+      type: Generic
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Defines how to chain the runtime image from the source build image
+    name: ${NAME}-runtime
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}:latest
+    source:
+      dockerfile: |-
+        FROM ${DOTNET_RUNTIME_IMAGE_STREAM_TAG}
+        ADD app.tar.gz .
+      images:
+      - from:
+          kind: ImageStreamTag
+          name: ${NAME}-build:latest
+        paths:
+        - destinationDir: .
+          sourcePath: /opt/app-root/app.tar.gz
+    strategy:
+      dockerStrategy:
+        from:
+          kind: ImageStreamTag
+          name: ${DOTNET_RUNTIME_IMAGE_STREAM_TAG}
+          namespace: ${NAMESPACE}
+      type: Docker
+    triggers:
+    - type: ImageChange
+    - type: ConfigChange
+    - imageChange:
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}-build:latest
+      type: ImageChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: angular-web-app
+    name: angular-web-app
+  spec:
+    replicas: 1
+    revisionHistoryLimit: 2
+    selector:
+      app: angular-web-app
+    strategy:
+      rollingParams:
+        timeoutSeconds: 3600
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: angular-web-app
+      spec:
+        containers:
+        - env:
+          - name: KUBERNETES_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          image: angular-web-app-runtime
+          imagePullPolicy: IfNotPresent
+          name: angular-web-app-runtime
+          ports:
+          - containerPort: 8080
+            name: http
+            protocol: TCP
+    triggers:
+      - type: ConfigChange
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames:
+            - angular-web-app-runtime
+          from:
+            kind: ImageStreamTag
+            name: 'angular-web-app-runtime:latest'
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      description: Defines how to deploy the application server
+    name: ${NAME}-runtime
+  spec:
+    replicas: 1
+    selector:
+      name: ${NAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: ${NAME}
+        name: ${NAME}
+      spec:
+        containers:
+        - env: []
+          image: ' '
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 40
+            timeoutSeconds: 15
+          name: dotnet-runtime-app
+          ports:
+          - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            timeoutSeconds: 30
+          resources:
+            limits:
+              memory: ${MEMORY_LIMIT}
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - dotnet-runtime-app
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}:latest
+      type: ImageChange
+    - type: ConfigChange
+parameters:
+- description: Maximum amount of memory the container can use.
+  displayName: Memory Limit
+  name: MEMORY_LIMIT
+  required: true
+  value: 512Mi
+- description: The OpenShift Namespace where the ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  value: openshift
+- description: The name of the OpenShift Service exposed for the database.
+  displayName: Database Service Name
+  name: DATABASE_SERVICE_NAME
+  required: true
+  value: mongodb
+- description: Username for MongoDB user that will be used for accessing the database.
+  displayName: MongoDB Connection Username
+  from: user[A-Z0-9]{3}
+  generate: expression
+  name: MONGODB_USER
+  required: true
+- description: Password for the MongoDB connection user.
+  displayName: MongoDB Connection Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MONGODB_PASSWORD
+  required: true
+- description: Name of the MongoDB database accessed.
+  displayName: MongoDB Database Name
+  name: MONGODB_DATABASE
+  required: true
+  value: sampledb
+- description: Password for the database admin user.
+  displayName: MongoDB Admin Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MONGODB_ADMIN_PASSWORD
+  required: true
+- description: Volume space available for data, e.g. 512Mi, 2Gi.
+  displayName: Volume Capacity
+  name: VOLUME_CAPACITY
+  required: true
+  value: 1Gi
+- description: Version of MongoDB image to be used (2.4, 2.6, 3.2 or latest).
+  displayName: Version of MongoDB Image
+  name: MONGODB_VERSION
+  required: true
+  value: "3.2"
+- description: The name assigned to all of the frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: dotnet-runtime-example
+- description: Maximum amount of memory the container can use.
+  displayName: Memory Limit
+  name: MEMORY_LIMIT
+  required: true
+  value: 128Mi
+- description: The image stream tag which is used to run the application.
+  displayName: .NET Runtime Imagestream Tag
+  name: DOTNET_RUNTIME_IMAGE_STREAM_TAG
+  required: true
+  value: dotnet-runtime:2.2
+- description: The image stream tag which is used to build the application.
+  displayName: .NET builder
+  name: DOTNET_BUILD_IMAGE_STREAM_TAG
+  required: true
+  value: dotnet:2.2
+- description: The OpenShift Namespace where the ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  required: true
+  value: openshift
+- description: The exposed hostname that will route to the .NET Core service, if left
+    blank a value will be defaulted.
+  displayName: Application Hostname
+  name: APPLICATION_DOMAIN
+- description: The URL of the repository with your application source code.
+  displayName: Git Repository URL
+  name: SOURCE_REPOSITORY_URL
+  required: true
+  value: https://github.com/redhat-developer/s2i-dotnetcore-ex.git
+- description: Set this to a branch name, tag or other ref of your repository if you
+    are not using the default branch.
+  displayName: Git Reference
+  name: SOURCE_REPOSITORY_REF
+  value: dotnetcore-2.2
+- description: Set this to use a subdirectory of the source code repository
+  displayName: Context Directory
+  name: CONTEXT_DIR
+- description: A secret string used to configure the GitHub webhook.
+  displayName: GitHub Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GITHUB_WEBHOOK_SECRET
+- description: A secret string used to configure the Generic webhook.
+  displayName: Generic Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GENERIC_WEBHOOK_SECRET
+- description: Set this to the folder containing your startup project.
+  displayName: Startup Project
+  name: DOTNET_STARTUP_PROJECT
+  value: app
+- description: Set this to configure the default SDK version. This can be set to a
+    specific version, '' (lowest version) or 'latest' (highest version).
+  displayName: SDK Version
+  name: DOTNET_SDK_VERSION
+- description: Set this when the assembly name is overridden in the project file.
+  displayName: Startup Assembly
+  name: DOTNET_ASSEMBLY_NAME
+- description: Set this to a space separated list of .NET tools needed to publish.
+  displayName: .NET Tools
+  name: DOTNET_TOOLS
+- description: Set this to a space separated list of npm tools needed to publish.
+  displayName: Npm Tools
+  name: DOTNET_NPM_TOOLS
+- description: Set this to a space separated list of test projects to run before publishing.
+  displayName: Test projects
+  name: DOTNET_TEST_PROJECTS
+- description: Set this to configuration (Release/Debug).
+  displayName: Configuration
+  name: DOTNET_CONFIGURATION
+  value: Release
+- description: Set this to override the NuGet.config sources.
+  displayName: NuGet package sources
+  name: DOTNET_RESTORE_SOURCES
+- name: SOURCE_REPOSITORY_URL_ANGULAR
+  description: The source URL for the application
+  displayName: Source URL
+  required: true
+  value: https://github.com/lholmquist/angular-web-app
+- name: SOURCE_REPOSITORY_REF_ANGULAR
+  description: The branch name for the application
+  displayName: Source Branch
+  value: master
+  required: true
+- name: SOURCE_REPOSITORY_DIR_ANGULAR
+  description: The location within the source repo of the application
+  displayName: Source Directory
+  value: .
+  required: true
+- name: OUTPUT_DIR_ANGULAR
+  description: The location of the compiled static files from your web apps builder
+  displayName: Output Directory
+  value: dist/angular-web-app
+  required: false
+- name: GITHUB_WEBHOOK_SECRET_ANGULAR
+  description: A secret string used to configure the GitHub webhook.
+  displayName: GitHub Webhook Secret
+  required: true
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+- name: APPLICATION_DOMAIN_ANGULAR
+  description: A secret string used to configure the GitHub webhook.
